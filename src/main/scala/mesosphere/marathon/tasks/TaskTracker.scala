@@ -172,11 +172,15 @@ class TaskTracker @Inject()(state: State) {
     results
   }
 
-  def serialize(appName: String, tasks: Set[MarathonTask], sink: ObjectOutputStream) {
-    val app = MarathonApp.newBuilder
+  def getProto(appName: String, tasks: Set[MarathonTask]): MarathonApp = {
+    MarathonApp.newBuilder
       .setName(appName)
       .addAllTasks(tasks.toList.asJava)
       .build
+  }
+
+  def serialize(appName: String, tasks: Set[MarathonTask], sink: ObjectOutputStream) {
+    val app = getProto(appName, tasks)
 
     val size = app.getSerializedSize
     sink.writeInt(size)
