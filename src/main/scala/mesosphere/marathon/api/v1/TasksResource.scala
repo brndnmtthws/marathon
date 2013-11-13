@@ -19,7 +19,6 @@ class TasksResource @Inject()(
 
   val log = Logger.getLogger(getClass.getName)
 
-
   @GET
   @Timed
   def list = {

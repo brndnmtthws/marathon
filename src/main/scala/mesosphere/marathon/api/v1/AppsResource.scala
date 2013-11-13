@@ -13,6 +13,8 @@ import javax.servlet.http.HttpServletRequest
 import mesosphere.marathon.tasks.TaskTracker
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
+import java.util.logging.Logger
+import org.apache.mesos.Protos.TaskID
 
 /**
  * @author Tobi Knaup
@@ -25,6 +27,8 @@ class AppsResource @Inject()(
     taskTracker: TaskTracker) {
 
   val defaultWait = Duration(5, "seconds")
+
+  val log = Logger.getLogger(getClass.getName)
 
   @GET
   @Timed
@@ -83,6 +87,43 @@ class AppsResource @Inject()(
         }
         // Maybe add some other query parameters?
         valid
+    }
+  }
+
+  import Implicits._
+
+  @GET
+  @Path("{appId}/tasks")
+  @Timed
+  def app(@PathParam("appId") appId: String): Response = {
+    val tasks = taskTracker.get(appId)
+    val result = Map(appId -> tasks.map(s => s: Map[String, Object]))
+    if (tasks.size > 0) {
+      Response.ok(result).build
+    } else {
+      Response.noContent.status(404).build
+    }
+  }
+
+  @POST
+  @Path("{appId}/scale")
+  @Timed
+  def scale(@PathParam("appId") appId: String,
+            @QueryParam("host") host: String,
+            @QueryParam("id") id: String) = {
+    service.getApp(appId) match {
+      case Some(appDef) =>
+        val tasks = taskTracker.get(appId)
+        val toKill = tasks.filter(x => x.getHost == host || x.getId == id)
+        appDef.instances = appDef.instances - toKill.size
+
+        Await.result(service.scaleApp(appDef, false), defaultWait)
+
+        for (task <- toKill) {
+          log.info(f"Killing task ${task.getId} on host ${task.getHost}")
+          service.driver.killTask(TaskID.newBuilder.setValue(task.getId).build)
+        }
+      case None =>
     }
   }
 }
