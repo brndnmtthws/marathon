@@ -2,7 +2,7 @@ package mesosphere.marathon.tasks
 
 import scala.collection._
 import scala.collection.JavaConverters._
-import org.apache.mesos.Protos.TaskID
+import org.apache.mesos.Protos.{TaskID, TaskStatus}
 import javax.inject.Inject
 import org.apache.mesos.state.State
 import java.util.logging.{Level, Logger}
@@ -105,6 +105,26 @@ class TaskTracker @Inject()(state: State) {
         None
     }
   }
+
+  def statusUpdate(appName: String,
+                   status: TaskStatus): Future[Option[MarathonTask]] = {
+    get(appName).find(_.getId == status.getTaskId.getValue) match {
+      case Some(task) => {
+        get(appName).remove(task)
+        val updatedTask = task.toBuilder
+          .addStatuses(status)
+          .build
+        get(appName) += updatedTask
+        store(appName).map(_ => Some(updatedTask))
+      }
+      case _ => {
+        log.warning(s"No task for ID ${status.getTaskId.getValue}")
+        None
+      }
+    }
+  }
+
+
 
   def startUp(appName: String) {
     // NO-OP

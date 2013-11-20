@@ -4,6 +4,7 @@ import org.apache.mesos.Protos._
 import org.apache.mesos.{SchedulerDriver, Scheduler}
 import java.util.logging.{Level, Logger}
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
 import mesosphere.mesos.TaskBuilder
 import mesosphere.marathon.api.v1.AppDefinition
 import mesosphere.marathon.state.MarathonStore
@@ -136,6 +137,7 @@ class MarathonScheduler @Inject()(
         }
       }
     }
+    taskTracker.statusUpdate(appID, status)
   }
 
   def frameworkMessage(driver: SchedulerDriver, executor: ExecutorID, slave: SlaveID, message: Array[Byte]) {
@@ -217,18 +219,25 @@ class MarathonScheduler @Inject()(
    * to give Mesos enough time to deliver task updates.
    * @param driver scheduler driver
    */
-  def balanceTasks(driver: SchedulerDriver) {
+  def reconcileTasks(driver: SchedulerDriver) {
+    val buf = new ListBuffer[TaskStatus]
     store.names().onComplete {
       case Success(iterator) => {
         log.info("Syncing tasks for all apps")
         for (appName <- iterator) {
           scale(driver, appName)
+          taskTracker.get(appName)
+            .map(task => {
+              buf += task.getStatusesList.asScala.last
+            })
         }
       }
       case Failure(t) => {
         log.log(Level.WARNING, "Failed to get task names", t)
       }
     }
+    log.info("About to reconcile tasks with Mesos")
+    driver.reconcileTasks(buf.asJava)
   }
 
   private def newTask(app: AppDefinition,

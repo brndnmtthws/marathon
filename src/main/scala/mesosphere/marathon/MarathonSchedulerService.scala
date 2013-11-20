@@ -36,8 +36,11 @@ class MarathonSchedulerService @Inject()(
   // TODO use a thread pool here
   import ExecutionContext.Implicits.global
 
-  // Time to wait before trying to balance app tasks after driver starts
-  val balanceWait = Duration(30, "seconds")
+  // Time to wait before trying to reconcile app tasks after driver starts
+  val registrationWait = Duration(60, "seconds")
+  // Reconcile tasks every hour or so
+  val periodicWait = Duration(1, "hours")
+  val reconciliationTimer = new Timer
 
   val log = Logger.getLogger(getClass.getName)
 
@@ -48,6 +51,7 @@ class MarathonSchedulerService @Inject()(
     .setFailoverTimeout(config.mesosFailoverTimeout())
     .setUser("") // Let Mesos assign the user
     .setCheckpoint(config.checkpoint())
+
 
   // Set the framework ID
   frameworkIdUtil.fetch() match {
@@ -117,7 +121,7 @@ class MarathonSchedulerService @Inject()(
 
   def runDriver() {
     log.info("Running driver")
-    scheduleTaskBalancing()
+    scheduleTaskReconciliation
     driver.run()
   }
 
@@ -157,15 +161,16 @@ class MarathonSchedulerService @Inject()(
   }
   //End Leader interface
 
-  private def scheduleTaskBalancing() {
-    val timer = new Timer()
+  private def scheduleTaskReconciliation {
+    reconciliationTimer.cancel
     val task = new TimerTask {
       def run() {
-        scheduler.balanceTasks(driver)
-        scheduleTaskBalancing
+        scheduler.reconcileTasks(driver)
       }
     }
-    timer.schedule(task, balanceWait.toMillis)
+    reconciliationTimer.schedule(task,
+                                 registrationWait.toMillis,
+                                 periodicWait.toMillis)
   }
 
   private def offerLeaderShip() {
